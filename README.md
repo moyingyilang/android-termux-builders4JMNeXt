@@ -31,8 +31,10 @@ cp env.example build.env   # 按自己的环境改：项目路径、容器根、
   （打出 `package: name='com.jmnext' versionCode='31' versionName='2.0.0'`，`apksigner` 通过）；
   `20-build-android.sh` 的流程与判据取自同一次真实出包（含 R8 修好后的完整构建）；
 - **未验证**：其他机器 / 其他发行版 / proot 而非 chroot / x86_64 宿主机 / Windows 与 macOS 的对应做法；
-- **尚未包含**：Compose Desktop 的跨架构打包（jlink 用目标架构 JDK 的 jmods、Skiko 原生库替换并删除宿主那份、
-  jpackage 不能跨平台生成启动器故改用脚本启动器、Windows 免装 JRE 裁剪）—— 那部分作者还在验证，验证后会补上。
+- **已包含**：Compose Desktop 跨架构打包的**原理文档**（`docs/DESKTOP-PACKAGING.md`：目标架构 jmods 经 jlink 生成运行时、
+  Skiko 原生库替换并删除宿主那份、jpackage 不能跨平台生成启动器故改用脚本启动器、Windows ZIP 的四样必备内容）与
+  **产物验收脚本**（`50-verify-desktop.sh`，对真实产物实测通过）；
+- **未包含**：desktop 的打包脚本本身（含项目专属命名与图标，仍留在项目仓库里）；其他架构组合（如 x86_64 宿主）未验证。
 
 ## 许可
 
