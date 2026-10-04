@@ -98,3 +98,37 @@ rpm -qp --qf "%{NAME} %{VERSION}\n" dist/Linux-aarch64-<版本>.rpm
 `%install` 之后 rpm 会用宿主的 `strip` 处理包内二进制。宿主与目标架构不同时（aarch64 的 strip 处理
 x86_64 的 `.so`）会报 `Unable to recognise the format of the input file`，并让 `%install` 失败。
 修法：`--define "__strip /bin/true"`。详见 `DESKTOP-PACKAGING.md` 第六节。
+
+## 16. "只会通过"的验收判据 = 没有判据
+
+一次真实事故：发布脚本检查"文件存在 + 大小非零"就放行，于是两个**只有 `classes.dex`、
+没有 `AndroidManifest.xml` 与 `resources.arsc`** 的坏 APK 被发到了发布页（`aapt2` 报
+`could not identify format of APK`）。当时脚本里其实**跑了** `aapt2`，但它的输出被 `grep` 过滤后为空，
+脚本仍继续往下走 —— 判据看起来在验，实际永远通过。
+
+**正确做法**：验收必须是**断言**，不满足就非零退出，发布只认退出码。见本仓库 `verify-apk.sh`：
+1) `aapt2 dump badging` 必须输出 `package:` 行；2) 包内必须同时存在 `AndroidManifest.xml` 与 `resources.arsc`；
+3) 包名与 versionName 必须匹配。
+
+## 17. 配置类文件的改动要 diff 核对，别只看"语法通过"
+
+同一事故的根因：某次给 `gradle.properties` **加注释**时，误删了 `android.enableResourceOptimizations=false`。
+这行删掉不会让编译失败、不会让构建报错，但会让 AGP 启用资源优化，从而产出**无法解析**的包
+（该项目历史注释写明："打开资源优化能把 APK 砍掉 32%，但产出的包在新版 Android 上无法解析
+（nativeOpenXml 失败）……因此保持关闭"）。
+
+**规矩**：配置类文件（`gradle.properties`、`*.gradle.kts`、打包脚本）改完必须 `git diff` **逐行看**，
+不能只确认"命令没报错"。批量替换/批量注释这类操作尤其危险。
+
+## 18. 排查用二分：先建"已知好"的对照，再逐点收敛
+
+同一事故的定位过程（值得作为模板）：
+
+1. 在**同一环境**、用**同一条命令**重建"已知好"的提交（当时的上一版），确认它**能建出正常包** ——
+   这一步把"环境/工具链变了"与"代码变了"分开；
+2. 逐点二分：`已知好` → `坏`，每次只换一个提交，先删中间产物避免假象；
+3. 每步都**打印当前提交**并直接判定"正常/坏包"（避免"检出失败却以为测了"这类假结论）；
+4. 收敛到少数提交后，`git diff <好> <坏> -- <配置文件>` 逐行看差异。
+
+**两个反面教训**（都踩过）：排查脚本里 `2>/dev/null` 把检出错误丢掉，导致"测了但没测到"；
+用 `tail -N` 看构建输出，把失败原因与上面的行一起截掉。
