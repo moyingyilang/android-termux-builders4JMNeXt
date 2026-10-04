@@ -41,3 +41,48 @@ chroot/proot 的绑定挂载会掉。表现是 `cd: 目录不存在`，很容易
 
 ## 8. 签名密钥绝不入库
 `keystore.properties` 与 `*.jks` 必须排除在版本控制外（本工具只把 `~/.android` **挂载**进容器）。
+
+## 9. 用 `tail` 看构建输出 = 自断线索
+
+排查构建失败时，把输出接到 `tail -N`（或 `grep 'FAILED'`）会**截掉报错正文**，只剩一行
+`Task :x FAILED`。同一个坑在 Android R8、rpm 打包、权限错误上各踩一次。
+正确做法：**只打印目标步骤的完整段落**，例如
+
+```bash
+gradle ... 2>&1 | sed -n '/5\/6 rpm/,/6\/6/p' | head -30
+```
+
+## 10. 范围 sed 会误删行
+
+用 `sed -i "$((A-10)),${B}s|...|...|"` 这类**范围**替换时，范围内每一行都会被处理，很容易把
+`Name:` 这种只在部分行出现的字段删空。表现是 `rpmbuild` 报 `Name field must be present`。
+改多行段落时：先打印段落，再按**单行定位**改，改完再打印回看。
+
+## 11. 带引号的 heredoc 不展开变量
+
+`cat > file <<'EOF'` 里的 `$V` 是**字面量**，写进 deb 的 `control` 或 rpm 的 `.spec` 会直接失败
+（`'Version' field value '$V': version number does not start with digit`）。两种正确做法：
+
+- 用占位符 + 事后替换： heredoc 里写 `@V@`，紧跟一行 `sed -i "s/@V@/$V/" file`；
+- 或去掉引号 `<<EOF`（但要先确认正文里没有 `$RPM_BUILD_ROOT` 这类会被误展开的宏）。
+
+## 12. 单体 exe 的验收要落到"实物"
+
+NSIS 打出的 exe，用 `7z l` 看到的路径是**解压目标路径**，形如
+`$LOCALAPPDATA/JMNeXt/runtime/bin/java.exe`。所以：
+
+- 判据写 `grep -q 'runtime/bin/java.exe'`（子串即可），不要写成从行首锚定；
+- 更硬的判据是**解压后看实物**：`7z x -o<dir> app.exe`，再对 `java.exe` 跑 `file`。
+  这一步能抓出"arm64 的包误装了 x64 的 JRE"——那种包装得上、却双击即崩，只看文件存在发现不了。
+  实测输出形如 `PE32+ executable for MS Windows (console), ARM64`。
+
+## 13. rpm 的产物名与内部版本
+
+`rpmbuild -bb` 的输出名由 spec 的 `Name`/`Version`/`Release` 与 `_target_cpu` 决定，
+脚本若只是 `cp` 出来，文件名会保持 `name-version-1.cpu.rpm`。要统一命名，就在复制时改名
+（`cp {} "$OUT/Linux-aarch64-$V.rpm"`），并确认 spec 的 `Version` 也跟版本号同步 ——
+否则**文件名对了、包内版本还是旧的**。核对命令：
+
+```bash
+rpm -qp --qf "%{NAME} %{VERSION}\n" dist/Linux-aarch64-<版本>.rpm
+```

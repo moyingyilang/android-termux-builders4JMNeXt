@@ -54,3 +54,18 @@ x64 与 arm64 各一份，别混）。启动器里设 `JMCOMIC_RENDER=GL` 可绕
 | Linux 便携包内有 `libskiko*.so` | 缺它启动即崩 |
 | deb 内有图标条目 | 缺它桌面没图标，且安装脚本可能报错 |
 | 产物名带正确版本号 | 名字错会导致用户下错包、或发布时漏传 |
+
+## 五、Windows 单体 exe（NSIS）
+
+ZIP 版对普通用户不友好（拿到手要自己找 `.bat`）。单体 exe 的做法：
+
+- 工具：**NSIS**（Debian 的 `nsis` 包，`apt-get install -y nsis`），`makensis` 能在 Linux 上编译 Windows exe；
+- 形态：`SilentInstall silent` + `RequestExecutionLevel user` + `SetOutPath "$LOCALAPPDATA\<App>"` +
+  `File /r stage\*`，然后 `Exec` 启动 `runtime\bin\javaw.exe -cp "app.jar;skiko-windows-<arch>.jar" <MainKt>`；
+  用 `javaw` 是为了不弹控制台；`System::Call 'kernel32::SetEnvironmentVariable(...)'` 可设 `JMCOMIC_RENDER=GL`；
+- 内容与 ZIP 版一致：应用 jar + Skiko 原生库 + 免装 JRE；
+- **两个架构各出一个**（x64 与 arm64），JRE 与 Skiko 都要取对应架构，别混用；
+- 验收见 `docs/PITFALLS.md` 第 12 条：`MZ` 头 + 解压看 `java.exe` 的 `file` 架构 + 包内含 `jmnext.jar`
+  与 `skiko-windows-<arch>.jar`。
+
+未验证：作者环境无法运行 Windows 程序，**exe 未在真机实跑**，只验证了结构与架构。
