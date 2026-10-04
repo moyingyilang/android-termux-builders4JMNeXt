@@ -102,3 +102,28 @@ LD_LIBRARY_PATH=/opt/rpm-arm64/usr/lib/aarch64-linux-gnu /opt/rpm-arm64/usr/bin/
 - rpm 产物名与内部版本要分别核对：`rpm -qp --qf "%{NAME} %{VERSION} %{ARCH}\n" file.rpm`
   （脚本若只是 `cp` 出来，文件名会保持 `name-version-1.cpu.rpm`）；
 - `rpmbuild` 的输出**不要**用 `tail -3` 看：失败命令本身就在被截掉的那段。写进日志文件，失败时打印末尾 30 行。
+
+## 七、跨架构 rpm 别再走 qemu：让目标架构"看起来"兼容
+
+在 aarch64 上产 x86_64 的 rpm，常见做法是用 qemu 跑 x86_64 的 rpmbuild —— 能成，但**慢一到两个数量级**
+（实测 233 秒 → 用下面的办法 83 秒，其中 rpm 那一步从一两分钟降到十几秒）。
+
+原因是 rpm 的"没有兼容架构"判断来自 **rpmrc 的兼容表**，而不是真的编译了什么。包里全是**数据文件**
+（我们已把 x86_64 的运行时交叉摆好），所以放开该检查是安全的：
+
+```
+# 自定义 rpmrc（复制系统的那份，追加两行）
+arch_compat: aarch64: x86_64
+buildarch_compat: aarch64: x86_64
+
+# 然后用**原生** rpmbuild 指定目标架构
+rpmbuild -bb --rcfile /opt/rpm-aarch64-custom/rpmrc --target x86_64 \
+  --define "_topdir $TOP" --define "_buildrootdir $TOP/BUILDROOT" --define "__strip /bin/true" \
+  "$TOP/SPECS/x.spec"
+```
+
+验证（两项都要看）：`rpm -qp --qf '%{NAME} %{VERSION} %{ARCH}\n'` 的 `%{ARCH}` 必须是目标架构；
+`rpm -qpl` 里必须能看到该架构的运行时文件。
+
+**适用边界**：只适用于**纯文件负载**的包。若 spec 里会编译代码（`%build` 真跑 gcc 等），这个技巧不成立 ——
+那时必须用目标架构的执行环境（qemu 或真机）。`__strip /bin/true` 仍然必需：宿主 strip 处理不了目标架构的 .so。
