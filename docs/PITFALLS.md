@@ -132,3 +132,52 @@ x86_64 的 `.so`）会报 `Unable to recognise the format of the input file`，�
 
 **两个反面教训**（都踩过）：排查脚本里 `2>/dev/null` 把检出错误丢掉，导致"测了但没测到"；
 用 `tail -N` 看构建输出，把失败原因与上面的行一起截掉。
+
+## 19. jlink / jpackage 产物打进 tar 后，共享库权限可能是 600
+
+真实事故：一个"一个包含两套运行时"的 Linux 统一包，启动器跑起来正常，但**直接执行包内的 `bin/java`** 报
+`libjli.so: cannot open shared object file`。查下来库文件在包里确实存在、`bin/java` 的 rpath 也写着
+`$ORIGIN:$ORIGIN/../lib` —— 真正原因是**权限**：
+
+```
+-rw-------.  .../lib/libjli.so     ← jlink 在容器 umask(077) 下生成的就是这个权限
+```
+
+`cp -a` 与 `tar` 会**原样保留**权限，于是 600 被带进包里。共享库至少要**可读**，否则加载器直接说"打不开"。
+
+**修法**（打包脚本里做归一化，别依赖 umask）：
+
+```
+chmod -R a+r  "$STAGE/lib/runtime-x64" "$STAGE/lib/runtime-x64"   # 库：可读即可
+chmod -R a+x  "$STAGE/lib/runtime-x64/bin"                        # 可执行文件单独加执行位
+```
+
+**一个容易写错的点**：`chmod -R a+rX` 里的 **`X` 只给"已经是可执行"的文件或目录加执行位** ——
+对 600 的 `.so` 它只加读，文件仍是 600，问题照旧。要可读就写 `a+r`，要执行就显式 `a+x`。
+
+**验收要验到权限**：打包后 `tar tvzf 包 | grep libjli.so` 看第一位是不是 `-rw-r--r--`；
+只看"文件在不在、ELF 架构对不对"是验不出这个问题的（我最初就是这样漏掉的）。
+
+## 20. 在 chroot 里验证 Linux 包：先修挂载，再分级探测
+
+Termux（bionic）里**不能**直接执行包内的 glibc ELF（报 `required file not found`）——必须进容器（glibc）。而容器常因会话结束而
+**绑定挂载失效**（表现为容器内看不到项目目录）。恢复方法（Termux 侧、需要 root）：
+
+```
+R=<容器根>; H=/data/data/com.termux/files/home
+su -c "for d in jmc android-sdk .android; do
+  t=$R/data/data/com.termux/files/home/\$d; mkdir -p \$t
+  mountpoint -q \$t || mount -o bind \$H/\$d \$t
+done"
+```
+
+**探测要分级**，并事先写清每级判据（否则容易把"探测方式不对"当成"包坏了"）：
+
+| 级别 | 命令 | 通过的含义 |
+| --- | --- | --- |
+| 1 | `lib/runtime-*/bin/java -version` | 运行时自身可用 |
+| 2 | `bin/jmnext`（真正的发布入口） | 启动器选对架构、找到运行时与 jar、进入 JVM 与应用启动阶段 |
+| 3 | 真实显示环境 | 界面能起来（只有用户能给） |
+
+无头容器里第 2 级**预期**以 `java.awt.HeadlessException: No X11 DISPLAY variable was set` 结束 ——
+**这就是通过**（说明已经走到 GUI 那一步），不要去"修"它。
