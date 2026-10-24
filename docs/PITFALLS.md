@@ -181,3 +181,42 @@ done"
 
 无头容器里第 2 级**预期**以 `java.awt.HeadlessException: No X11 DISPLAY variable was set` 结束 ——
 **这就是通过**（说明已经走到 GUI 那一步），不要去"修"它。
+
+## 21. 版本号正则写死成"当前版本"
+
+打包脚本里若有 `grep -oE '1\.9\.[0-9]+' Version.kt` 这种**写死版本**的提取，升到 2.x 后会**匹配不到** →
+`VERSION` 变成空字符串 → 后面的 `[ -n "$VERSION" ] || exit 1`（或 `set -u`）让脚本**静默退出码 1**，
+日志里一个字都没有。表现是"这个形态的包一直没产出"，很容易误判成跳过逻辑或磁盘问题。
+
+修法：一律用通用正则 `grep -oE '[0-9]+\.[0-9]+\.[0-9]+' … | tail -1`。
+自查：`grep -rn "grep -oE '[0-9]" scripts/` 逐个看有没有写死的前缀。
+
+## 22. 打包脚本用相对 `$0` 找同目录文件，`cd` 之后就找不到
+
+脚本开头 `cd "$(dirname "$0")/.."` 之后再用 `$(dirname "$0")/lib-gate.sh` 拼路径，**此时 `$0` 是相对路径**，
+拼出来的 `lib-gate.sh` 已经是错的位置（例如 `desktop/desktop/scripts/lib-gate.sh`），报
+`No such file or directory`。
+
+两种修法：脚本内先 `SELF=$(cd "$(dirname "$0")" && pwd)` 再拼绝对路径；或**从目标目录运行**并且
+**用绝对路径调用脚本**。若某个脚本本身不自带 `cd`，就必须在它的工作目录里执行它，
+否则会报 `src/main/kotlin/.../Version.kt: No such file or directory`。
+
+## 23. `gh release create` 一次性传大文件会整体回滚
+
+把十几个附件（合计 1GB 以上）一次交给 `gh release create` 上传，只要有一个大文件触发
+`HTTP 408: Upload body timed out due to inactivity`，**整条命令失败、Release 被回滚**
+（随后 `gh release view <tag>` 报 `release not found`），前面传好的也会一起没了。
+
+稳妥做法：先 `gh release create`（**不带附件**）建好 Release，再对每个文件
+`gh release upload <tag> <file> --clobber`，外层套 3–4 次重试；并先查一次已有附件做幂等跳过：
+
+```sh
+gh release view "$TAG" -R owner/repo --json assets --jq '.assets[].name' | grep -qx "$n" && continue
+```
+
+## 24. `apksigner` 与 JDK 版本不匹配时报 `NoSuchMethodError: getMainType`
+
+在容器里用 build-tools 自带的 `apksigner` 验签，若 JDK 版本与它不匹配，会直接抛
+`java.lang.NoSuchMethodError: getMainType`（和 `gradlew` 用错 JDK 时的报错一模一样）。
+**这不代表 APK 签名有问题** —— 由 Gradle + `keystore.properties` 签出来的包是好的，
+只是这条独立验签命令用不了。要给 `apksigner` 指定一个匹配的 JDK，或者干脆以 Gradle 的签名结果为准。
