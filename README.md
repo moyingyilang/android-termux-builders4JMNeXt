@@ -40,3 +40,26 @@ cp env.example build.env   # 按自己的环境改：项目路径、容器根、
 
 **MPL-2.0**（见 `LICENSE`）：按文件传染 —— 修改了本仓库的文件，那些文件及其修改需以 MPL 公开；
 把本工具当工具使用、或与自己的代码放在别的文件里，则不受约束。与 GPL/AGPL 兼容（MPL §3.3）。
+
+## 设备侧界面验证（vdtester）
+
+`30-verify-apk.sh` / `50-verify-desktop.sh` 验的是**产物**（包结构、版本、签名）；
+界面验证需要一块不打扰用户的屏幕，于是有了 `60-test-on-device.sh`：
+
+```bash
+./60-test-on-device.sh build                    # 编译 dex（javac + d8）
+./60-test-on-device.sh start 1280 720 240       # 建 PUBLIC 虚拟屏
+./60-test-on-device.sh launch com.jmnext        # 把 App 启动上去
+./60-test-on-device.sh capture /sdcard/vd.png   # 抓帧，尺寸与 start 一致
+./60-test-on-device.sh stop
+```
+
+全程 on-device：root 建屏、`am start --display` 启动、`screencap -d` 抓帧、`input -d` 注入点击，
+**不需要 adb、不在主机侧跑**。
+
+两条实测结论（都写进了 `vdtester/README.md`）：
+
+- `settings put global overlay_display_devices` 建的「叠加视图」**不能承载 App**：
+  root(0) / shell(2000) / system(1000) 三个身份启动都会被 `SafeActivityOptions` 拒；
+  必须是 `DisplayManager` 建的 PUBLIC 虚拟屏；
+- `screencap` 认 **SurfaceFlinger id**、`input` 认**逻辑 id**，混用必失败。
