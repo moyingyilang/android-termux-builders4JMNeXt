@@ -8,7 +8,9 @@ import android.os.Looper;
 
 public final class HoldVd {
     public static void main(String[] args) throws Exception {
-        int w = 1280, h = 720, dpi = 240;
+        int w = args.length > 0 ? Integer.parseInt(args[0]) : 1280;
+        int h = args.length > 1 ? Integer.parseInt(args[1]) : 720;
+        int dpi = args.length > 2 ? Integer.parseInt(args[2]) : 240;
         Looper.prepareMainLooper();
         Class<?> atClass = Class.forName("android.app.ActivityThread");
         Object at = atClass.getMethod("systemMain").invoke(null);
