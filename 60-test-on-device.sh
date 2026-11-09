@@ -7,18 +7,21 @@
 #
 # 用法：
 #   ./60-test-on-device.sh build                编译 dex（javac + d8）
-#   ./60-test-on-device.sh start [宽 高 dpi]
-#   ./60-test-on-device.sh launch [包名]
-#   ./60-test-on-device.sh capture [png]
-#   ./60-test-on-device.sh tap X Y
-#   ./60-test-on-device.sh ids
-#   ./60-test-on-device.sh stop
+#   ./60-test-on-device.sh start [宽 高 dpi]     建屏并挂住
+#   ./60-test-on-device.sh launch [包名]         把 App 启动到该屏
+#   ./60-test-on-device.sh capture [png]         抓帧
+#   ./60-test-on-device.sh tap X Y               向该屏注入点击
+#   ./60-test-on-device.sh ids                   打印逻辑 id 与 SF id
+#   ./60-test-on-device.sh stop                  释放虚拟屏
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 VD="$HERE/vdtester/run.sh"
-
-case "${1:-}" in
+cmd="${1:-}"
+case "$cmd" in
 build)   exec sh "$HERE/vdtester/build.sh" ;;
-start|launch|capture|tap|ids|stop) shift; exec sh "$VD" "$@" ;;
-*)       sed -n '2,16p' "$0" ;;
+start|launch|capture|tap|ids|stop)
+         shift
+         exec sh "$VD" "$cmd" "$@"
+         ;;
+*)       sed -n '2,17p' "$0" ;;
 esac

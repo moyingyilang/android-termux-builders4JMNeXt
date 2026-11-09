@@ -14,6 +14,7 @@
 #   - DisplayManager 建的 PUBLIC 虚拟屏可以，`am start --display` 直接成功；
 #   - screencap 认 SF id，input 认逻辑 id，两者必须分开取。
 set -u
+SRC=$(cd "$(dirname "$0")" && pwd)/dex/vdtester.dex
 DEX=${DEX:-/data/local/tmp/vdtester.dex}
 PIDF=/data/local/tmp/vdtester.pid
 LOG=/data/local/tmp/vdtester.log
@@ -31,7 +32,8 @@ logical_id() {
 case "${1:-}" in
 start)
     w=${2:-1280}; h=${3:-720}; dpi=${4:-240}
-    su -c "cp $DEX /data/local/tmp/vdtester.dex" 2>/dev/null || true
+    [ -f "$SRC" ] || { echo "缺少 $SRC（先 ./60-test-on-device.sh build）"; exit 1; }
+    su -c "cp '$SRC' '$DEX' && chmod 644 '$DEX'"
     # 记录 PID：不用 pkill -f（它会把命令行里含同样字符串的自己杀掉）
     su -c "CLASSPATH=$DEX app_process /system/bin HoldVd $w $h $dpi > $LOG 2>&1 & echo \$! > $PIDF"
     i=0
