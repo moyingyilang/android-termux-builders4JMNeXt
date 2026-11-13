@@ -10,6 +10,20 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # 宿主机侧：确认项目在
 [ -d "$PROJECT_DIR" ] || { echo "宿主机上找不到项目：$PROJECT_DIR"; exit 1; }
 
+# 容器里的 /dev 必须是可用的：rootfs 放在 /data 上，SELinux 不允许直接使用那里
+# mknod 出来的设备节点（表现为 ">/dev/null: Permission denied"，极易被误判成项目丢了）。
+# 修法：给 /dev 挂一个 tmpfs，再在里面 mknod 出四个基本设备。
+if ! su -c "chroot '$CHROOT_ROOT' /bin/sh -c 'echo probe > /dev/null'" 2>/dev/null; then
+  echo "  /dev 不可用，重建中"
+  su -c "
+    mountpoint -q '$CHROOT_ROOT/dev' || mount -t tmpfs tmpfs '$CHROOT_ROOT/dev'
+    for n in 'null c 1 3' 'zero c 1 5' 'random c 1 8' 'urandom c 1 9'; do
+      set -- \$n
+      [ -e '$CHROOT_ROOT/dev/'\$1 ] || mknod -m 666 '$CHROOT_ROOT/dev/'\$1 \$2 \$3 \$4
+    done
+  " || { echo "  /dev 重建失败"; exit 1; }
+fi
+
 # 逐个挂载点检查并补挂（需要 root；tmoe 环境下 su 可用）
 need=0
 for d in ${MOUNT_DIRS:-}; do
