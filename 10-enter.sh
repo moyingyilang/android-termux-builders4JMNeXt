@@ -25,6 +25,15 @@ if ! su -c "chroot '$CHROOT_ROOT' /bin/sh -c 'echo probe > /dev/null'" 2>/dev/nu
 fi
 
 # 逐个挂载点检查并补挂（需要 root；tmoe 环境下 su 可用）
+# /proc 与 /sys 缺了会让 JVM 起不来：jpackage 的启动器直接 exit 1 且不打日志，
+# 极易被误判成「产包坏了」。这里一并补挂。
+for m in proc sys; do
+  mp="$CHROOT_ROOT/$m"
+  mountpoint -q "$mp" && continue
+  if [ "$m" = proc ]; then mount -t proc proc "$mp"; else mount -o bind /sys "$mp"; fi \
+    || echo "  挂载 $mp 失败"
+done
+
 need=0
 for d in ${MOUNT_DIRS:-}; do
   rel="${d#"$HOME"/}"
